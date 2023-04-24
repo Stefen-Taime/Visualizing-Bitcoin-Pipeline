@@ -21,72 +21,7 @@ Here’s an outline of our plan:
 
  5. Deployment: We will deploy the entire setup using Jenkins, Docker, and Docker Compose.
 
-    from fastapi import FastAPI, Response
-    from fastapi.responses import PlainTextResponse, JSONResponse
-    import uvicorn
-    from dotenv import load_dotenv
-    import os
-    import requests
-    import json
-    from prometheus_client import Gauge, CollectorRegistry, generate_latest
-    from datetime import date
-    import redis
-    
-    load_dotenv()
-    
-    def scrape_data():
-        qry_url = f'{os.environ.get("STOCK_URL")}?function=CURRENCY_EXCHANGE_RATE&from_currency=BTC&to_currency=USD&apikey={os.environ.get("API_KEY")}'
-        response = requests.request("GET", qry_url)
-        respdata = response.json()
-        rate = respdata['Realtime Currency Exchange Rate']['5. Exchange Rate']
-        float_rate = "{:.2f}".format(float(rate))
-        return float_rate
-    
-    registry = CollectorRegistry()
-    exchange_rate_btc_usd = Gauge('exchange_rate_btc_usd', 'Exchange rate between BTC and USD', registry=registry)
-    
-    app = FastAPI()
-    
-    @app.get("/", response_class=JSONResponse)
-    async def root():
-        return {"message": "Hello World"}
-    
-    @app.get("/exchangemetrics", response_class=PlainTextResponse)
-    async def get_exchange_metrics():
-        r = redis.Redis(host="redis", port=os.environ.get('REDIS_PORT'), password=os.environ.get('REDIS_PASSWORD'), db=0)
-        scraped_data = 0.0
-        try:
-            todays_date = str(date.today())
-            redis_key = f'exchange_rate-{todays_date}'
-            tmpdata = r.get(redis_key)
-            scraped_data = tmpdata.decode("utf-8")
-            exchange_rate_btc_usd.set(float(scraped_data))
-        except Exception as e:
-            print(e)
-            print('responding default value')
-        return Response(generate_latest(registry), media_type="text/plain")
-    
-    
-    @app.get("/getexchangedata", response_class=PlainTextResponse)
-    async def get_exchange_data():
-        r = redis.Redis(host="redis", port=os.environ.get('REDIS_PORT'), password=os.environ.get('REDIS_PASSWORD'), db=0)
-        scraped_data = 0.0
-        respdata = "error"
-        try:
-            scraped_data = scrape_data()
-            todays_date = str(date.today())
-            r.set(f'exchange_rate-{todays_date}', scraped_data)
-            respdata = "done"
-        except Exception as e:
-            print(e)
-            print('responding default value')
-            todays_date = str(date.today())
-            r.set(f'exchange_rate-{todays_date}', scraped_data)
-        return respdata
-    
-    if __name__ == "__main__":
-        uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
-    
+  
     
 
 FastAPI application that fetches the Bitcoin to USD exchange rate from an external API and stores the data in a Redis database. It also exposes the exchange rate data as Prometheus metrics. Let’s break down the code:
@@ -131,18 +66,7 @@ It sets up Prometheus to scrape metrics from two different sources: Prometheus i
 
 * static_configs: This section specifies the target for this job. In this case, it's set to scrape metrics from the FastAPI application running on 'fastapi_app:5000' (the application's hostname and port).
 
-    global:
-      scrape_interval: 15s
-    
-    scrape_configs:
-      - job_name: 'prometheus'
-        static_configs:
-          - targets: ['localhost:9090']
-      - job_name: 'fastapi_app'
-        metrics_path: '/exchangemetrics'
-        static_configs:
-          - targets: ['fastapi_app:5000']
-
+   
 ## Jenkins
 
 which defines a Jenkins pipeline for building and deploying a project. The pipeline consists of four stages, and there’s a post section to execute actions after all stages have completed. Let's break down the pipeline:
@@ -184,64 +108,6 @@ which defines a Jenkins pipeline for building and deploying a project. The pipel
  1. Post: Specifies actions to be executed after all the stages have completed, regardless of their success or failure.
 
 * In this case, it prints the URLs for Prometheus, Grafana, Redis, and the FastAPI application.
-
-    pipeline {
-        agent {
-            label 'ubuntu'
-        }
-        stages {
-            stage('Build and Deploy prometheus, grafana, and redis') {
-                steps {
-                    dir('/home/stefen/deploy/adminer') {
-                        sh 'pwd' // Ajout de la commande pwd pour vérifier le répertoire de travail
-                        sh 'ls -la'
-                        sh 'docker-compose up -d'
-                    }
-                }
-            }
-            stage('Build and Deploy API') {
-                steps {
-                    sleep(time: 30, unit: 'SECONDS') // Wait for 30 seconds
-                    dir('/home/stefen/deploy/api') {
-                        sh 'pwd' // Check the current working directory
-                        sh 'ls -la'
-                        sh 'docker-compose up --build -d'
-                    }
-                }
-            }
-            stage('Fetch and Print getexchangedata') {
-                steps {
-                    script {
-                        def response = httpRequest 'http://localhost:5000/getexchangedata'
-                        echo "Response: ${response.content}"
-                    }
-                }
-            }
-            stage('Fetch and Print Exchangemetrics') {
-                steps {
-                    script {
-                        def response = httpRequest 'http://localhost:5000/exchangemetrics'
-                        echo "Response: ${response.content}"
-                    }
-                }
-            }
-        }
-        post {
-            always {
-                script {
-                    def prometheusURL = 'http://localhost:9090'
-                    def grafanaURL = 'http://localhost:3000'
-                    def redisURL = 'http://localhost:6379'
-                    def apiURL = 'http://localhost:5000'
-    
-                    echo "Prometheus URL: ${prometheusURL}"
-                    echo "Grafana URL: ${grafanaURL}"
-                    echo "Redis URL: ${redisURL}"
-                    echo "API URL: ${apiURL}"
-                }
-            }
-        }
-    }
 
 ### Grafana Dashboard:
 
