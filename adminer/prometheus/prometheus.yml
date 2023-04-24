@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+  - job_name: 'fastapi_app'
+    metrics_path: '/exchangemetrics'
+    static_configs:
+      - targets: ['fastapi_app:5000']
